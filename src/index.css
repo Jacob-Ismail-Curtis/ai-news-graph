@@ -1,0 +1,68 @@
+/* src/index.css*/
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@tailwind typography;
+
+
+/* Base resets + CSS variables */
+@layer base {
+  :root {
+  --bg: 255 255 255;
+  --fg: 15 23 42;
+}
+  .dark {
+  --bg: 17 24 39;   /* slate-900 */
+  --fg: 229 231 235; /* slate-200 */
+  }
+  html, body, #root {
+    height: 100%;
+    background-color: rgb(var(--bg));
+    color: rgb(var(--fg));
+  }
+}
+
+/* Component presets (uses @apply -> needs the @reference above) */
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 font-medium shadow-soft transition
+           bg-brand text-white hover:bg-brand-dark focus:outline-none focus:ring-2 focus:ring-brand/40;
+  }
+  .card {
+    @apply rounded-2xl bg-surface p-6 shadow-soft;
+  }
+  .link {
+    @apply text-brand hover:underline;
+  }
+  .btn-ghost { 
+    @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 transition text-brand hover:bg-brand/10; 
+  }
+  .btn-outline { 
+    @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 border border-brand text-brand hover:bg-brand hover:text-white; 
+ }
+
+  .text-muted { 
+    @apply text-slate-500 dark:text-slate-400; 
+  }
+  .card {
+    @apply rounded-2xl bg-surface p-6 shadow-soft 
+           dark:bg-slate-800 dark:text-slate-100;
+  }
+}
+
+
+
+/* Markdown typography */
+@layer utilities {
+  .prose-post {
+    @apply prose prose-slate max-w-none
+           prose-headings:scroll-mt-24
+           prose-img:rounded-xl
+           prose-pre:rounded-xl
+           prose-a:text-brand
+           dark:prose-invert;
+  }
+  .icon-btn { @apply inline-flex items-center justify-center h-9 w-9 rounded-xl border
+                     border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5
+                     focus:outline-none focus:ring-2 focus:ring-brand/40 transition; }
+}
