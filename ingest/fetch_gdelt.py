@@ -1,4 +1,7 @@
 # ingest/fetch_gdelt.py
+# Forces English-only results:
+# - Adds `sourcelang:english` to the DOC 2.0 query
+# - Post-filters rows where language == "English"
 import sys, os, json, hashlib, time, random, requests
 from datetime import datetime, timedelta, timezone
 from dateutil import parser as dtp
@@ -7,13 +10,23 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # -------- settings (can override via env) --------
-QUERY = os.environ.get("GDELT_QUERY", '("artificial intelligence" OR "generative ai" OR "large language model" '
-         'OR "ai safety" OR "frontier model" OR OpenAI OR Anthropic OR DeepMind '
-         'OR "Google DeepMind" OR "Meta AI" OR "Mistral AI" OR "Llama 3" '
-         'OR "GPT-4o" OR "Claude 3")')
-TIMESPAN = os.environ.get("GDELT_TIMESPAN", "1h")    # keep 1h for hourly runs
+QUERY = os.environ.get(
+    "GDELT_QUERY",
+    '("artificial intelligence" OR "generative ai" OR "large language model" '
+    'OR "ai safety" OR "frontier model" OR OpenAI OR Anthropic OR DeepMind '
+    'OR "Google DeepMind" OR "Meta AI" OR "Mistral AI" OR "Llama 3" '
+    'OR "GPT-4o" OR "Claude 3")'
+)
+
+# Toggle with env if you ever need non-English: export GDELT_ONLY_ENGLISH=0
+ONLY_ENGLISH = os.environ.get("GDELT_ONLY_ENGLISH", "1") == "1"
+
+TIMESPAN = os.environ.get("GDELT_TIMESPAN", "1h")            # keep 1h for hourly runs
 MAXRECORDS = int(os.environ.get("GDELT_MAXRECORDS", "200"))  # 200 to be polite
-USER_AGENT = os.environ.get("USER_AGENT", "ai-news-graph/1.0 (+https://github.com/<your-username>/ai-news-graph)")
+USER_AGENT = os.environ.get(
+    "USER_AGENT",
+    "ai-news-graph/1.0 (+https://github.com/<your-username>/ai-news-graph)"
+)
 
 OUT_ROOT = sys.argv[1] if len(sys.argv) > 1 else "."   # e.g. "docs"
 PARQUET_DIR = os.path.join(OUT_ROOT, "parquet")
@@ -39,8 +52,12 @@ def make_session() -> requests.Session:
 def fetch_gdelt_artlist(session: requests.Session) -> pd.DataFrame:
     """Fetch the last hour of AI-related articles from GDELT DOC 2.0 (ArtList) with retry/backoff."""
     base = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+    # Add English-only constraint at the query level
+    q = f"({QUERY}) sourcelang:english" if ONLY_ENGLISH else QUERY
+
     params = {
-        "query": QUERY,
+        "query": q,
         "mode": "artlist",
         "timespan": TIMESPAN,
         "maxrecords": str(MAXRECORDS),
@@ -75,7 +92,14 @@ def fetch_gdelt_artlist(session: requests.Session) -> pd.DataFrame:
             "source_country": a.get("sourcecountry"),
             "social_image": a.get("socialimage"),
         })
-    return pd.DataFrame(rows)
+
+    df = pd.DataFrame(rows)
+
+    # Post-filter safeguard: keep only rows whose original language is English
+    if ONLY_ENGLISH and not df.empty:
+        df = df[df["language"].fillna("").str.lower() == "english"]
+
+    return df
 
 def write_daily_parquet(df: pd.DataFrame):
     if df.empty:
@@ -126,4 +150,4 @@ if __name__ == "__main__":
     df = fetch_gdelt_artlist(session)
     wrote = write_daily_parquet(df)
     update_manifest()
-    print(f"Fetched {len(df)} articles. Updated: {wrote}")
+    print(f"Fetched {len(df)} articles (English-only={ONLY_ENGLISH}). Updated: {wrote}")

@@ -44,6 +44,7 @@ jobs:
           REPO_BASE_URL: ${{ env.REPO_BASE_URL }}
           GDELT_MAXRECORDS: "200"     # optional: be polite
           GDELT_TIMESPAN: "1h"
+          GDELT_ONLY_EN: "1"
         run: python ingest/fetch_gdelt.py docs
 
       - name: Commit parquet + manifest
