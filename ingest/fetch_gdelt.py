@@ -1,38 +1,59 @@
 # ingest/fetch_gdelt.py
-import sys, os, json, hashlib, requests
+import sys, os, json, hashlib, time, random, requests
 from datetime import datetime, timedelta, timezone
 from dateutil import parser as dtp
 import pandas as pd
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-OUT_ROOT = sys.argv[1] if len(sys.argv) > 1 else "."  # default repo root
+# -------- settings (can override via env) --------
+QUERY = os.environ.get("GDELT_QUERY", '("artificial intelligence" OR "generative ai" OR "large language model" '
+         'OR "ai safety" OR "frontier model" OR OpenAI OR Anthropic OR DeepMind '
+         'OR "Google DeepMind" OR "Meta AI" OR "Mistral AI" OR "Llama 3" '
+         'OR "GPT-4o" OR "Claude 3")')
+TIMESPAN = os.environ.get("GDELT_TIMESPAN", "1h")    # keep 1h for hourly runs
+MAXRECORDS = int(os.environ.get("GDELT_MAXRECORDS", "200"))  # 200 to be polite
+USER_AGENT = os.environ.get("USER_AGENT", "ai-news-graph/1.0 (+https://github.com/<your-username>/ai-news-graph)")
+
+OUT_ROOT = sys.argv[1] if len(sys.argv) > 1 else "."   # e.g. "docs"
 PARQUET_DIR = os.path.join(OUT_ROOT, "parquet")
 MANIFEST_PATH = os.path.join(OUT_ROOT, "manifests", "index.json")
 REPO_BASE_URL = os.environ.get("REPO_BASE_URL", "")
 
-# ... rest of the file unchanged except it now writes to PARQUET_DIR/MANIFEST_PATH ...
-
-# ---- settings ----
-QUERY = ('("artificial intelligence" OR "generative ai" OR "large language model" '
-         'OR "ai safety" OR "frontier model" OR OpenAI OR Anthropic OR DeepMind '
-         'OR "Google DeepMind" OR "Meta AI" OR "Mistral AI" OR "Llama 3" OR "GPT-4o" OR "Claude 3")')
-TIMESPAN = "1h"          # run hourly
-MAXRECORDS = 250         # DOC 2.0 ArtList max
-
 def stable_id(url: str) -> str:
     return hashlib.sha1(url.strip().lower().encode("utf-8")).hexdigest()
 
-def fetch_gdelt_artlist():
+def make_session() -> requests.Session:
+    s = requests.Session()
+    retry = Retry(
+        total=6,                # up to 6 tries
+        backoff_factor=1.5,     # 1.5s, 3s, 4.5s, 6.75s, ...
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+        respect_retry_after_header=True,
+    )
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.headers.update({"User-Agent": USER_AGENT})
+    return s
+
+def fetch_gdelt_artlist(session: requests.Session) -> pd.DataFrame:
+    """Fetch the last hour of AI-related articles from GDELT DOC 2.0 (ArtList) with retry/backoff."""
     base = "https://api.gdeltproject.org/api/v2/doc/doc"
     params = {
         "query": QUERY,
         "mode": "artlist",
         "timespan": TIMESPAN,
         "maxrecords": str(MAXRECORDS),
-        "format": "json"
+        "format": "json",
     }
-    r = requests.get(base, params=params, timeout=30)
-    r.raise_for_status()
-    arts = r.json().get("articles", [])
+
+    # small jitter before request (reduces stampedes)
+    time.sleep(random.uniform(0.5, 2.0))
+
+    r = session.get(base, params=params, timeout=30)
+    r.raise_for_status()  # will trigger urllib3.Retry on 429/5xx
+    data = r.json()
+    arts = data.get("articles", [])
     rows = []
     for a in arts:
         url = (a.get("url") or "").strip()
@@ -57,7 +78,8 @@ def fetch_gdelt_artlist():
     return pd.DataFrame(rows)
 
 def write_daily_parquet(df: pd.DataFrame):
-    if df.empty: return []
+    if df.empty:
+        return []
     df = df.dropna(subset=["id","url"]).copy()
 
     def day_of(row):
@@ -69,6 +91,7 @@ def write_daily_parquet(df: pd.DataFrame):
     df["day"] = df.apply(day_of, axis=1)
     os.makedirs(PARQUET_DIR, exist_ok=True)
     written = []
+
     for day, g in df.groupby("day"):
         y, m, d = day.split("-")
         out_dir = os.path.join(PARQUET_DIR, y, m)
@@ -85,9 +108,9 @@ def write_daily_parquet(df: pd.DataFrame):
     return written
 
 def update_manifest():
-    """Keep a list of the most recent 30 daily parquet file URLs for the front-end."""
-    os.makedirs("manifests", exist_ok=True)
+    os.makedirs(os.path.dirname(MANIFEST_PATH), exist_ok=True)
     today = datetime.now(timezone.utc).date()
+
     urls = []
     for i in range(30):
         day = today - timedelta(days=i)
@@ -99,7 +122,8 @@ def update_manifest():
         json.dump({"files": list(reversed(urls))}, f, indent=2)
 
 if __name__ == "__main__":
-    df = fetch_gdelt_artlist()
+    session = make_session()
+    df = fetch_gdelt_artlist(session)
     wrote = write_daily_parquet(df)
     update_manifest()
-    print("Parquet updated:", wrote)
+    print(f"Fetched {len(df)} articles. Updated: {wrote}")
