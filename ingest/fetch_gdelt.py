@@ -223,27 +223,30 @@ def write_daily_parquet(df: pd.DataFrame):
     return written
 
 def update_manifest():
-    """
-    Update manifests/index.json with URLs to the latest 30 daily Parquet files.
-    Looks for files under OUT_ROOT (e.g., 'docs/parquet/...').
-    """
+    import glob
     manifest_dir = os.path.join(OUT_ROOT, "manifests")
     os.makedirs(manifest_dir, exist_ok=True)
     manifest_path = os.path.join(manifest_dir, "index.json")
 
-    today = datetime.now(timezone.utc).date()
-    urls = []
+    parquet_root = os.path.join(OUT_ROOT, "parquet")
+    print(f"[manifest] OUT_ROOT={OUT_ROOT}")
+    print(f"[manifest] scanning {parquet_root} for *.parquet ...")
+    paths = sorted(glob.glob(os.path.join(parquet_root, "**", "*.parquet"), recursive=True))
+    print(f"[manifest] found {len(paths)} parquet file(s)")
 
-    for i in range(30):
-        day = today - timedelta(days=i)
-        y, m, d = f"{day.year}", f"{day.month:02d}", f"{day.day:02d}"
-        rel = f"parquet/{y}/{m}/{y}-{m}-{d}.parquet"
-        full_path = os.path.join(OUT_ROOT, rel)  # <-- check under OUT_ROOT
-        if os.path.exists(full_path):
-            # emit absolute URL if REPO_BASE_URL is set; otherwise relative
-            urls.append(f"{REPO_BASE_URL}/{rel}" if REPO_BASE_URL else rel)
+    if not paths:
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump({"files": []}, f, indent=2)
+        print(f"[manifest] wrote empty manifest at {manifest_path}")
+        return
+
+    rels = [os.path.relpath(p, OUT_ROOT).replace("\\", "/") for p in paths]
+    rels.sort(key=lambda rel: os.path.getmtime(os.path.join(OUT_ROOT, rel)))
+    files = [f"{REPO_BASE_URL}/{rel}" if REPO_BASE_URL else rel for rel in rels]
 
     with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump({"files": list(reversed(urls))}, f, indent=2)
+        json.dump({"files": files}, f, indent=2)
 
-    print(f"Manifest updated at {manifest_path} with {len(urls)} file(s).")
+    print(f"[manifest] wrote {len(files)} file(s) to {manifest_path}")
+    for s in files[-3:]:
+        print(f"[manifest] sample: {s}")
