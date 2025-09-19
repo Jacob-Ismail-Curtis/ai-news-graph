@@ -223,22 +223,27 @@ def write_daily_parquet(df: pd.DataFrame):
     return written
 
 def update_manifest():
-    os.makedirs(os.path.dirname(MANIFEST_PATH), exist_ok=True)
-    today = datetime.now(timezone.utc).date()
+    """
+    Update manifests/index.json with URLs to the latest 30 daily Parquet files.
+    Looks for files under OUT_ROOT (e.g., 'docs/parquet/...').
+    """
+    manifest_dir = os.path.join(OUT_ROOT, "manifests")
+    os.makedirs(manifest_dir, exist_ok=True)
+    manifest_path = os.path.join(manifest_dir, "index.json")
 
+    today = datetime.now(timezone.utc).date()
     urls = []
+
     for i in range(30):
         day = today - timedelta(days=i)
         y, m, d = f"{day.year}", f"{day.month:02d}", f"{day.day:02d}"
         rel = f"parquet/{y}/{m}/{y}-{m}-{d}.parquet"
-        if os.path.exists(rel):
+        full_path = os.path.join(OUT_ROOT, rel)  # <-- check under OUT_ROOT
+        if os.path.exists(full_path):
+            # emit absolute URL if REPO_BASE_URL is set; otherwise relative
             urls.append(f"{REPO_BASE_URL}/{rel}" if REPO_BASE_URL else rel)
-    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump({"files": list(reversed(urls))}, f, indent=2)
 
-if __name__ == "__main__":
-    session = make_session()
-    df = fetch_gdelt_artlist(session)
-    wrote = write_daily_parquet(df)
-    update_manifest()
-    print(f"Fetched {len(df)} articles (English-only={ONLY_ENGLISH}). Updated: {wrote}")
+    print(f"Manifest updated at {manifest_path} with {len(urls)} file(s).")
