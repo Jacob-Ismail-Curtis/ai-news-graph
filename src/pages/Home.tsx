@@ -1,9 +1,11 @@
 // src/pages/Home.tsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import NewsGraph, { type NewsNode } from "../components/NewsGraph";
 import { getDuckConn } from "../lib/duckdb";
-import NewsGraph, { NewsNode } from "../components/NewsGraph";
 
-const MANIFEST_URL = "/manifests/index.json";
+const MANIFEST_URL =
+  import.meta.env.VITE_MANIFEST_URL ??
+  new URL(`${import.meta.env.BASE_URL}manifests/index.json`, window.location.href).toString();
 
 // simple topic heuristic; you can move this to ingest later
 function guessTopic(title: string) {
@@ -17,7 +19,7 @@ function guessTopic(title: string) {
   return "other";
 }
 
-const Home: React.FC = () => {
+export default function Home() {
   const [nodes, setNodes] = useState<NewsNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,9 +30,15 @@ const Home: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        const manifestResp = await fetch(MANIFEST_URL);
-        if (!manifestResp.ok) throw new Error(`Manifest HTTP ${manifestResp.status}`);
-        const manifest = await manifestResp.json();
+        const resp = await fetch(MANIFEST_URL);
+        const ct = resp.headers.get("content-type") || "";
+        if (!resp.ok || !ct.includes("application/json")) {
+          const sample = await resp.text().catch(() => "");
+          throw new Error(
+            `Manifest is not JSON at ${MANIFEST_URL}. status=${resp.status} content-type=${ct} sample="${sample.slice(0,80)}"`
+          );
+        }
+        const manifest = await resp.json();
         const files: string[] = Array.isArray(manifest.files) ? manifest.files : [];
         if (!files.length) {
           setNodes([]);
@@ -44,7 +52,6 @@ const Home: React.FC = () => {
           SELECT * FROM read_parquet([${urlsSQL}]);
         `);
 
-        // Select minimal columns; DuckDB will fetch only needed byte ranges
         const result = await conn.query(`
           SELECT
             id::STRING as id,
@@ -57,7 +64,6 @@ const Home: React.FC = () => {
           WHERE published_at >= now() - INTERVAL 7 DAY
         `);
 
-        // toArray() → array of rows (tuples), strongly type them:
         type Row = [string, string, string | null, Date | null, string | null, string | null];
         const rows = (result.toArray() as unknown) as Row[];
 
@@ -91,21 +97,15 @@ const Home: React.FC = () => {
     <main id="main" className="max-w-6xl mx-auto px-4 py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">AI News Explorer</h1>
-        <p className="text-sm text-zinc-500">
-          Reading Parquet over HTTP with DuckDB-WASM (last 7 days).
-        </p>
+        <p className="text-sm text-zinc-500">Reading Parquet over HTTP with DuckDB-WASM (last 7 days).</p>
       </header>
 
       {loading && <p className="text-zinc-400">Loading…</p>}
       {error && <p className="text-red-500">Error: {error}</p>}
       {!loading && !error && nodes.length === 0 && (
-        <p className="text-zinc-400">
-          No data yet. Did your GitHub Action write <code>/manifests/index.json</code> and daily Parquet files?
-        </p>
+        <p className="text-zinc-400">No data yet. Check <code>/manifests/index.json</code>.</p>
       )}
       {nodes.length > 0 && <NewsGraph nodes={nodes} />}
     </main>
   );
-};
-
-export default Home;
+}

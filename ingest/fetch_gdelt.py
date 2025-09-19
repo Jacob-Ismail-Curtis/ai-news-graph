@@ -1,7 +1,15 @@
-import os, json, hashlib, requests
+# ingest/fetch_gdelt.py
+import sys, os, json, hashlib, requests
 from datetime import datetime, timedelta, timezone
 from dateutil import parser as dtp
 import pandas as pd
+
+OUT_ROOT = sys.argv[1] if len(sys.argv) > 1 else "."  # default repo root
+PARQUET_DIR = os.path.join(OUT_ROOT, "parquet")
+MANIFEST_PATH = os.path.join(OUT_ROOT, "manifests", "index.json")
+REPO_BASE_URL = os.environ.get("REPO_BASE_URL", "")
+
+# ... rest of the file unchanged except it now writes to PARQUET_DIR/MANIFEST_PATH ...
 
 # ---- settings ----
 QUERY = ('("artificial intelligence" OR "generative ai" OR "large language model" '
@@ -9,9 +17,6 @@ QUERY = ('("artificial intelligence" OR "generative ai" OR "large language model
          'OR "Google DeepMind" OR "Meta AI" OR "Mistral AI" OR "Llama 3" OR "GPT-4o" OR "Claude 3")')
 TIMESPAN = "1h"          # run hourly
 MAXRECORDS = 250         # DOC 2.0 ArtList max
-PARQUET_DIR = "parquet"
-MANIFEST_PATH = os.path.join("manifests", "index.json")
-REPO_BASE_URL = os.environ.get("REPO_BASE_URL", "")  # e.g. https://<user>.github.io/ai-news
 
 def stable_id(url: str) -> str:
     return hashlib.sha1(url.strip().lower().encode("utf-8")).hexdigest()

@@ -1,8 +1,7 @@
 name: gdelt-hourly
-
 on:
   schedule:
-    - cron: "0 * * * *"   # hourly at :00 UTC
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -11,7 +10,6 @@ permissions:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -25,12 +23,12 @@ jobs:
       - name: Set REPO_BASE_URL for manifest links
         shell: bash
         run: |
-          OWNER="${GITHUB_REPOSITORY_OWNER}"      # e.g. jacobcurtis
-          REPO="${GITHUB_REPOSITORY#*/}"          # strip 'owner/' → repo name
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          REPO="${GITHUB_REPOSITORY#*/}"
           if [ "$REPO" = "${OWNER}.github.io" ]; then
-            BASE="https://${OWNER}.github.io"     # user/org site
+            BASE="https://${OWNER}.github.io"
           else
-            BASE="https://${OWNER}.github.io/${REPO}"  # project site
+            BASE="https://${OWNER}.github.io/${REPO}"
           fi
           echo "REPO_BASE_URL=$BASE" >> "$GITHUB_ENV"
           echo "Using REPO_BASE_URL=$BASE"
@@ -38,18 +36,12 @@ jobs:
       - name: Run ingest (GDELT → Parquet + manifest)
         env:
           REPO_BASE_URL: ${{ env.REPO_BASE_URL }}
-        run: python ingest/fetch_gdelt.py
+        run: python ingest/fetch_gdelt.py docs  # <-- pass target root
 
       - name: Commit parquet + manifest
         shell: bash
         run: |
-          CHANGED=$(git status --porcelain | grep -E '^( M|A |AM|\?\?) (parquet|manifests)' || true)
-          if [ -n "$CHANGED" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add parquet manifests/index.json
-            git commit -m "Hourly GDELT ingest"
-            git push
-          else
-            echo "No changes to commit."
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/parquet docs/manifests/index.json
+          git diff --cached --quiet && echo "No changes" || (git commit -m "Hourly GDELT ingest" && git push)

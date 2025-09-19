@@ -1,5 +1,4 @@
 // src/components/NewsGraph.tsx
-import React from "react";
 import ForceGraph3D from "react-force-graph-3d";
 
 export type NewsNode = {
