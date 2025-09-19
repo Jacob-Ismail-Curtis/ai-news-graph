@@ -7,6 +7,9 @@ const MANIFEST_URL =
   import.meta.env.VITE_MANIFEST_URL ??
   new URL(`${import.meta.env.BASE_URL}manifests/index.json`, window.location.href).toString();
 
+console.log("Fetching manifest from:", MANIFEST_URL);
+
+
 // simple topic heuristic; you can move this to ingest later
 function guessTopic(title: string) {
   const t = title.toLowerCase();
