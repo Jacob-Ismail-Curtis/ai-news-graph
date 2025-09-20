@@ -1,9 +1,8 @@
-# .github/workflows/gdelt-hourly.yml
 name: gdelt-hourly
 
 on:
   schedule:
-    - cron: "7 * * * *"   # run at HH:07 UTC
+    - cron: "7 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -16,6 +15,8 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: "1"             # live logs
     steps:
       - uses: actions/checkout@v4
 
@@ -42,9 +43,9 @@ jobs:
       - name: Run ingest (GDELT → Parquet + manifest)
         env:
           REPO_BASE_URL: ${{ env.REPO_BASE_URL }}
-          GDELT_MAXRECORDS: "200"     # optional: be polite
+          GDELT_ONLY_ENGLISH: "1"        # use the canonical env name here
+          GDELT_MAXRECORDS: "200"
           GDELT_TIMESPAN: "1h"
-          GDELT_ONLY_EN: "1"
         run: python ingest/fetch_gdelt.py docs
 
       - name: Commit parquet + manifest

@@ -1,0 +1,10 @@
+{
+  "source": {
+    "worker": "duckdb-browser-mvp.worker.js",
+    "wasm": "duckdb-mvp.wasm"
+  },
+  "copied": {
+    "worker": "duckdb-mvp.worker.js",
+    "wasm": "duckdb-mvp.wasm"
+  }
+}

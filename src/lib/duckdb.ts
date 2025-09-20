@@ -3,10 +3,11 @@ import * as duckdb from "@duckdb/duckdb-wasm";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
 /**
- * Returns a ready-to-use DuckDB-WASM connection with httpfs enabled.
+ * Uses the official CDN bundle but wraps the worker code in a Blob so the
+ * Worker is same-origin (no cross-origin Worker restriction).
  */
 export async function getDuckConn(): Promise<AsyncDuckDBConnection> {
-  // Use official CDN bundles (works well with Vite + GitHub Pages)
+  // Pick a bundle (mvp/eh) compatible with the browser
   const bundles = duckdb.getJsDelivrBundles();
   const bundle = await duckdb.selectBundle(bundles);
 
@@ -14,16 +15,19 @@ export async function getDuckConn(): Promise<AsyncDuckDBConnection> {
     throw new Error("No suitable DuckDB-WASM bundle found for this browser.");
   }
 
-  // Worker: cross-origin → classic worker is fine
-  const worker =
-    bundle.mainWorker.startsWith("http")
-      ? new Worker(bundle.mainWorker)
-      : new Worker(new URL(bundle.mainWorker, import.meta.url), { type: "module" });
+  // 1) Fetch worker script text from CDN (CORS permitted by jsDelivr)
+  const workerCode = await fetch(bundle.mainWorker).then(async (r) => {
+    if (!r.ok) throw new Error(`Failed to fetch DuckDB worker: ${r.status}`);
+    return await r.text();
+  });
 
-  // ⚠️ Constructor is (logger, worker) — not (worker, logger)
+  // 2) Create a Blob URL (same-origin) and spawn the Worker from it
+  const blob = new Blob([workerCode], { type: "text/javascript" });
+  const workerUrl = URL.createObjectURL(blob);
+  const worker = new Worker(workerUrl); // classic worker
+
+  // 3) Create DB and instantiate with the wasm module URL (CDN is fine)
   const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
-
-  // Instantiate the WASM module
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker ?? undefined);
 
   const conn = await db.connect();
